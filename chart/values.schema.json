@@ -3049,7 +3049,7 @@
         },
         "enforceTolerations": {
           "items": {
-            "type": "string"
+            "type": "object"
           },
           "type": "array",
           "description": "EnforceTolerations will add the specified tolerations to all pods synced by the virtual cluster."
