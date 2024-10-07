@@ -6,6 +6,7 @@ import (
 
 	"github.com/loft-sh/vcluster/pkg/mappings"
 	"github.com/loft-sh/vcluster/pkg/patcher"
+	"github.com/loft-sh/vcluster/pkg/pro"
 	"github.com/loft-sh/vcluster/pkg/specialservices"
 	"github.com/loft-sh/vcluster/pkg/syncer"
 	"github.com/loft-sh/vcluster/pkg/syncer/synccontext"
@@ -28,6 +29,7 @@ func New(ctx *synccontext.RegisterContext) (syncertypes.Object, error) {
 
 	return &endpointsSyncer{
 		GenericTranslator: translator.NewGenericTranslator(ctx, "endpoints", &corev1.Endpoints{}, mapper),
+		Importer:          pro.NewImporter(mapper),
 
 		excludedAnnotations: []string{
 			"control-plane.alpha.kubernetes.io/leader",
@@ -37,6 +39,7 @@ func New(ctx *synccontext.RegisterContext) (syncertypes.Object, error) {
 
 type endpointsSyncer struct {
 	syncertypes.GenericTranslator
+	syncertypes.Importer
 
 	excludedAnnotations []string
 }
@@ -52,11 +55,17 @@ func (s *endpointsSyncer) SyncToHost(ctx *synccontext.SyncContext, event *syncco
 		return syncer.DeleteVirtualObject(ctx, event.Virtual, "host object was deleted")
 	}
 
-	return syncer.CreateHostObject(ctx, event.Virtual, s.translate(ctx, event.Virtual), s.EventRecorder())
+	pObj := s.translate(ctx, event.Virtual)
+	err := pro.ApplyPatchesHostObject(ctx, nil, pObj, event.Virtual, ctx.Config.Sync.ToHost.Endpoints.Patches)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	return syncer.CreateHostObject(ctx, event.Virtual, pObj, s.EventRecorder())
 }
 
 func (s *endpointsSyncer) Sync(ctx *synccontext.SyncContext, event *synccontext.SyncEvent[*corev1.Endpoints]) (_ ctrl.Result, retErr error) {
-	patch, err := patcher.NewSyncerPatcher(ctx, event.Host, event.Virtual)
+	patch, err := patcher.NewSyncerPatcher(ctx, event.Host, event.Virtual, patcher.TranslatePatches(ctx.Config.Sync.ToHost.Endpoints.Patches))
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("new syncer patcher: %w", err)
 	}

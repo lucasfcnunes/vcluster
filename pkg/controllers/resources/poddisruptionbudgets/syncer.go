@@ -5,6 +5,7 @@ import (
 
 	"github.com/loft-sh/vcluster/pkg/mappings/generic"
 	"github.com/loft-sh/vcluster/pkg/patcher"
+	"github.com/loft-sh/vcluster/pkg/pro"
 	"github.com/loft-sh/vcluster/pkg/syncer"
 	"github.com/loft-sh/vcluster/pkg/syncer/synccontext"
 	"github.com/loft-sh/vcluster/pkg/syncer/translator"
@@ -24,11 +25,13 @@ func New(ctx *synccontext.RegisterContext) (syncertypes.Object, error) {
 
 	return &pdbSyncer{
 		GenericTranslator: translator.NewGenericTranslator(ctx, "podDisruptionBudget", &policyv1.PodDisruptionBudget{}, mapper),
+		Importer:          pro.NewImporter(mapper),
 	}, nil
 }
 
 type pdbSyncer struct {
 	syncertypes.GenericTranslator
+	syncertypes.Importer
 }
 
 var _ syncertypes.Syncer = &pdbSyncer{}
@@ -42,11 +45,18 @@ func (s *pdbSyncer) SyncToHost(ctx *synccontext.SyncContext, event *synccontext.
 		return syncer.DeleteVirtualObject(ctx, event.Virtual, "host object was deleted")
 	}
 
-	return syncer.CreateHostObject(ctx, event.Virtual, s.translate(ctx, event.Virtual), s.EventRecorder())
+	newPDB := s.translate(ctx, event.Virtual)
+
+	err := pro.ApplyPatchesHostObject(ctx, nil, newPDB, event.Virtual, ctx.Config.Sync.ToHost.PodDisruptionBudgets.Patches)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("apply patches: %w", err)
+	}
+
+	return syncer.CreateHostObject(ctx, event.Virtual, newPDB, s.EventRecorder())
 }
 
 func (s *pdbSyncer) Sync(ctx *synccontext.SyncContext, event *synccontext.SyncEvent[*policyv1.PodDisruptionBudget]) (_ ctrl.Result, retErr error) {
-	patch, err := patcher.NewSyncerPatcher(ctx, event.Host, event.Virtual)
+	patch, err := patcher.NewSyncerPatcher(ctx, event.Host, event.Virtual, patcher.TranslatePatches(ctx.Config.Sync.ToHost.PodDisruptionBudgets.Patches))
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("new syncer patcher: %w", err)
 	}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/loft-sh/vcluster/pkg/mappings"
 	"github.com/loft-sh/vcluster/pkg/patcher"
+	"github.com/loft-sh/vcluster/pkg/pro"
 	"github.com/loft-sh/vcluster/pkg/syncer"
 	"github.com/loft-sh/vcluster/pkg/syncer/synccontext"
 	"github.com/loft-sh/vcluster/pkg/syncer/translator"
@@ -46,8 +47,14 @@ func (s *priorityClassSyncer) SyncToHost(ctx *synccontext.SyncContext, event *sy
 	}
 
 	newPriorityClass := s.translate(ctx, event.Virtual)
+
+	err := pro.ApplyPatchesHostObject(ctx, nil, newPriorityClass, event.Virtual, ctx.Config.Sync.ToHost.PriorityClasses.Patches)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("apply patches: %w", err)
+	}
+
 	ctx.Log.Infof("create physical priority class %s", newPriorityClass.Name)
-	err := ctx.PhysicalClient.Create(ctx, newPriorityClass)
+	err = ctx.PhysicalClient.Create(ctx, newPriorityClass)
 	if err != nil {
 		ctx.Log.Infof("error syncing %s to physical cluster: %v", event.Virtual.Name, err)
 		return ctrl.Result{}, err
@@ -58,7 +65,7 @@ func (s *priorityClassSyncer) SyncToHost(ctx *synccontext.SyncContext, event *sy
 
 func (s *priorityClassSyncer) Sync(ctx *synccontext.SyncContext, event *synccontext.SyncEvent[*schedulingv1.PriorityClass]) (_ ctrl.Result, retErr error) {
 	// patch objects
-	patch, err := patcher.NewSyncerPatcher(ctx, event.Host, event.Virtual)
+	patch, err := patcher.NewSyncerPatcher(ctx, event.Host, event.Virtual, patcher.TranslatePatches(ctx.Config.Sync.ToHost.PriorityClasses.Patches))
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("new syncer patcher: %w", err)
 	}

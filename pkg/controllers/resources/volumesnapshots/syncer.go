@@ -5,6 +5,7 @@ import (
 
 	"github.com/loft-sh/vcluster/pkg/mappings"
 	"github.com/loft-sh/vcluster/pkg/patcher"
+	"github.com/loft-sh/vcluster/pkg/pro"
 	"github.com/loft-sh/vcluster/pkg/syncer"
 	"github.com/loft-sh/vcluster/pkg/syncer/synccontext"
 	translator2 "github.com/loft-sh/vcluster/pkg/syncer/translator"
@@ -34,17 +35,19 @@ func New(ctx *synccontext.RegisterContext) (syncertypes.Object, error) {
 
 	return &volumeSnapshotSyncer{
 		GenericTranslator: translator2.NewGenericTranslator(ctx, "volume-snapshot", &volumesnapshotv1.VolumeSnapshot{}, mapper),
+		Importer:          pro.NewImporter(mapper),
 	}, nil
 }
 
 type volumeSnapshotSyncer struct {
 	syncertypes.GenericTranslator
+	syncertypes.Importer
 }
 
 var _ syncertypes.Syncer = &volumeSnapshotSyncer{}
 
 func (s *volumeSnapshotSyncer) Syncer() syncertypes.Sync[client.Object] {
-	return syncer.ToGenericSyncer[*volumesnapshotv1.VolumeSnapshot](s)
+	return syncer.ToGenericSyncer(s)
 }
 
 func (s *volumeSnapshotSyncer) SyncToHost(ctx *synccontext.SyncContext, event *synccontext.SyncToHostEvent[*volumesnapshotv1.VolumeSnapshot]) (ctrl.Result, error) {
@@ -59,6 +62,11 @@ func (s *volumeSnapshotSyncer) SyncToHost(ctx *synccontext.SyncContext, event *s
 	}
 
 	pObj, err := s.translate(ctx, event.Virtual)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	err = pro.ApplyPatchesHostObject(ctx, nil, pObj, event.Virtual, ctx.Config.Sync.ToHost.VolumeSnapshots.Patches)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -83,7 +91,7 @@ func (s *volumeSnapshotSyncer) Sync(ctx *synccontext.SyncContext, event *synccon
 		}
 
 		// sync finalizers and status to allow tracking of the deletion progress
-		//TODO: refactor finalizer syncing and handling
+		// TODO: refactor finalizer syncing and handling
 		// we can not add new finalizers from physical to virtual once it has deletionTimestamp, we can only remove finalizers
 
 		if !equality.Semantic.DeepEqual(event.Virtual.Finalizers, event.Host.Finalizers) {
@@ -120,7 +128,7 @@ func (s *volumeSnapshotSyncer) Sync(ctx *synccontext.SyncContext, event *synccon
 	}
 
 	// patch objects
-	patch, err := patcher.NewSyncerPatcher(ctx, event.Host, event.Virtual)
+	patch, err := patcher.NewSyncerPatcher(ctx, event.Host, event.Virtual, patcher.TranslatePatches(ctx.Config.Sync.ToHost.VolumeSnapshots.Patches))
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("new syncer patcher: %w", err)
 	}

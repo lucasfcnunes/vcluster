@@ -48,7 +48,7 @@ type volumeSnapshotContentSyncer struct {
 var _ syncertypes.Syncer = &volumeSnapshotContentSyncer{}
 
 func (s *volumeSnapshotContentSyncer) Syncer() syncertypes.Sync[client.Object] {
-	return syncer.ToGenericSyncer[*volumesnapshotv1.VolumeSnapshotContent](s)
+	return syncer.ToGenericSyncer(s)
 }
 
 func (s *volumeSnapshotContentSyncer) SyncToVirtual(ctx *synccontext.SyncContext, event *synccontext.SyncToVirtualEvent[*volumesnapshotv1.VolumeSnapshotContent]) (ctrl.Result, error) {
